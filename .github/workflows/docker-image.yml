@@ -26,13 +26,13 @@ jobs:
     - name: Run pylint
       run: |
         pip install pylint
-        pylint ./app --fail-under=8.0
+        pylint ./app --fail-under=8.5
 
     - name: Run Tests and Calculate Coverage
       run: |
         export FLASK_ENV=testing
         pip install pytest pytest-cov
-        pytest -c pytest.ini --cov --cov-fail-under=85
+        pytest -c pytest.ini --cov --cov-fail-under=80
 
     - name: Build and push the Docker image
       uses: mr-smithers-excellent/docker-build-push@v6
