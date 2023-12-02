@@ -3,7 +3,7 @@ The 'OrderService' module manages operations related to orders within the applic
 It includes functionalities for creating, retrieving, updating, and canceling orders,
 as well as calculating order totals and fetching orders based on specific criteria.
 """
-
+from datetime import datetime
 from app import db
 from app.models import Order, OrderItem
 
@@ -12,16 +12,10 @@ class OrderService:
     A class handling various operations related to orders.
     """
 
-    def __init__(self):
-        """
-        Initializes the OrderService.
-        """
-        pass
-
     def create_new_order(self, order_data):
         """
         Creates a new order.
-
+        
         Args:
         - order_data (dict): Data for the new order.
 
@@ -32,28 +26,71 @@ class OrderService:
         - Exception: If an error occurs during order creation.
         """
         try:
-            order = Order(**order_data)
-            db.session.add(order)
+            user_id = order_data.get('user_id')
+            status = order_data.get('status')
+
+            items_data = order_data.get('items', [])
+
+            # Create the Order object
+            new_order = Order(
+                user_id=user_id,
+                status=status.upper(),
+            )
+
+            total_price = 0
+
+            # Add OrderItems to the new order and calculate total price
+            for item_data in items_data:
+                price = item_data.get('price')
+                quantity = item_data.get('quantity')
+                total_price += price * quantity
+
+                new_order.items.append(OrderItem(
+                    product_id=item_data.get('product_id'),
+                    quantity=quantity,
+                    price=price
+                ))
+
+            new_order.total_price = total_price
+
+            db.session.add(new_order)
             db.session.commit()
-            return order.id
-        except Exception as e:
+            return new_order.id
+        except Exception as exception:
             db.session.rollback()
-            raise e
+            raise exception
 
     def get_all_orders(self):
+        """
+        Fetches all orders from the database and formats them into a list of dictionaries.
+
+        Returns:
+        list: A list containing dictionaries, each representing an order with the following keys:
+        """
         orders = Order.query.all()
         formated_orders = []
         for order in orders:
-            formated_order = {
+            items = []
+            for item in order.items:
+                item_info = {
+                    'id': item.id,
+                    'product_id': item.product_id,
+                    'quantity': item.quantity,
+                    'price': item.price,
+                    'created_at': item.created_at
+                }
+                items.append(item_info)
+
+            formatted_order = {
                 'id': order.id,
                 'user_id': order.user_id,
                 'total_price': order.total_price,
-                'status': order.status,
+                'status': order.status.value,
                 'created_at': order.created_at,
                 'updated_at': order.updated_at,
-                'items': order.items
+                'items': items
             }
-            formated_orders.append(formated_order)
+            formated_orders.append(formatted_order)
         return formated_orders
 
     def get_order_by_id(self, order_id):
@@ -71,44 +108,61 @@ class OrderService:
         """
         try:
             order = db.session.get(Order, order_id)
-            order_serialized = {
-                'id': order.id,
-                'user_id': order.user_id,
-                'total_price': order.total_price,
-                'status': order.status,
-                'created_at': order.created_at,
-                'updated_at': order.updated_at,
-                'items': order.items
-            }
-            return order_serialized if order else None
-        except Exception as e:
-            raise e
+            if order:
+                items = []
+                for item in order.items:
+                    item_info = {
+                        'id': item.id,
+                        'product_id': item.product_id,
+                        'quantity': item.quantity,
+                        'price': item.price,
+                        'created_at': item.created_at
+                    }
+                    items.append(item_info)
+
+                order_serialized = {
+                    'id': order.id,
+                    'user_id': order.user_id,
+                    'total_price': order.total_price,
+                    'status': order.status.value,
+                    'created_at': order.created_at,
+                    'updated_at': order.updated_at,
+                    'items': items
+                }
+                return order_serialized
+            return None
+        except Exception as exception:
+            raise exception
 
     def update_order_status(self, order_id, status_data):
         """
-        Updates the status of an order.
+        Update the status of an order by order ID.
 
         Args:
         - order_id (int): ID of the order to update.
-        - status_data (dict): Updated status information.
+        - status_data (dict): Dictionary containing the new status data.
 
         Returns:
-        - bool: True if order status updated successfully, otherwise False.
-
-        Raises:
-        - Exception: If an error occurs during order status update.
+        - bool: True if the order status is updated successfully, else False.
         """
         try:
             order = db.session.get(Order, order_id)
-            if order:
-                order.status = status_data['status']
-                order.updated_at = status_data['updated_at']
-                db.session.commit()
-                return True
-            return False
-        except Exception as e:
+
+            if not order:
+                return False
+
+            new_status = status_data.get('status')
+            updated_at = datetime.utcnow()
+
+            # Update the order status and updated_at timestamp
+            order.status = new_status.upper()
+            order.updated_at = updated_at
+            db.session.commit()
+            return True
+
+        except Exception as exception:
             db.session.rollback()
-            raise e
+            raise exception
 
     def get_orders_by_user(self, user_id):
         """
@@ -131,13 +185,13 @@ class OrderService:
                     'id': order.id,
                     'user_id': order.user_id,
                     'total_price': order.total_price,
-                    'status': order.status
+                    'status': order.status.value
                     }
                 formated_orders.append(formated_order)
 
             return formated_orders
-        except Exception as e:
-            raise e
+        except Exception as exception:
+            raise exception
 
     def cancel_order(self, order_id):
         """
@@ -159,9 +213,9 @@ class OrderService:
                 db.session.commit()
                 return True
             return False
-        except Exception as e:
+        except Exception as exception:
             db.session.rollback()
-            raise e
+            raise exception
 
     def get_orders_by_status(self, status):
         """
@@ -177,75 +231,37 @@ class OrderService:
         - Exception: If an error occurs during retrieval of orders by status.
         """
         try:
-            orders = Order.query.filter_by(status=status).all()
+            orders = Order.query.filter_by(status=status.upper()).all()
             formated_orders = []
             for order in orders:
+                items = []
+                for item in order.items:
+                    item_info = {
+                        'id': item.id,
+                        'product_id': item.product_id,
+                        'quantity': item.quantity,
+                        'price': item.price,
+                        'created_at': item.created_at
+                    }
+                    items.append(item_info)
                 formated_order = {
                     'id': order.id,
                     'user_id': order.user_id,
                     'total_price': order.total_price,
+                    'items': items,
                     'created_at':order.created_at,
                     'updated_at':order.updated_at,
-                    'status': order.status
+                    'status': order.status.value
                     }
                 formated_orders.append(formated_order)
             return formated_orders
-        except Exception as e:
-            raise e
-
-    def calculate_order_total(self, order_items):
-        """
-        Calculates the total price of an order.
-
-        Args:
-        - order_items (list): List of items comprising the order.
-
-        Returns:
-        - float: Total price of the order.
-
-        Raises:
-        - Exception: If an error occurs during order total calculation.
-        """
-        try:
-            total_price = sum(item['price'] for item in order_items)
-            return total_price
-        except Exception as e:
-            raise e
+        except Exception as exception:
+            raise exception
 
 class OrderItemService:
     """
     A class handling various operations related to order items.
     """
-
-    def __init__(self):
-        """
-        Initializes the OrderItemService.
-        """
-        pass
-
-    def create_order_item(self, order_id, item_data):
-        """
-        Creates a new order item for a given order.
-
-        Args:
-        - order_id (int): ID of the order to add the item to.
-        - item_data (dict): Data for the new order item.
-
-        Returns:
-        - int: The ID of the created order item.
-
-        Raises:
-        - Exception: If an error occurs during order item creation.
-        """
-        try:
-            item_data['order_id'] = order_id
-            order_item = OrderItem(**item_data)
-            db.session.add(order_item)
-            db.session.commit()
-            return order_item.id
-        except Exception as e:
-            db.session.rollback()
-            raise e
 
     def get_order_items(self, order_id):
         """
@@ -271,59 +287,8 @@ class OrderItemService:
                     'quantity': item.quantity,
                     'price': item.price,
                     'created_at': item.created_at,
-                    'updated_at': item.updated_at
                 }
                 formatted_items.append(formatted_item)
             return formatted_items
-        except Exception as e:
-            raise e
-
-    def update_order_item(self, item_id, updated_data):
-        """
-        Updates an order item.
-
-        Args:
-        - item_id (int): ID of the order item to update.
-        - updated_data (dict): Updated data for the order item.
-
-        Returns:
-        - bool: True if order item updated successfully, otherwise False.
-
-        Raises:
-        - Exception: If an error occurs during order item update.
-        """
-        try:
-            order_item = db.session.get(OrderItem, item_id)
-            if order_item:
-                order_item.quantity = updated_data['quantity']
-                order_item.updated_at = updated_data['updated_at']
-                db.session.commit()
-                return True
-            return False
-        except Exception as e:
-            db.session.rollback()
-            raise e
-
-    def delete_order_item(self, item_id):
-        """
-        Deletes an order item.
-
-        Args:
-        - item_id (int): ID of the order item to delete.
-
-        Returns:
-        - bool: True if order item deleted successfully, otherwise False.
-
-        Raises:
-        - Exception: If an error occurs during order item deletion.
-        """
-        try:
-            order_item = db.session.get(OrderItem, item_id)
-            if order_item:
-                db.session.delete(order_item)
-                db.session.commit()
-                return True
-            return False
-        except Exception as e:
-            db.session.rollback()
-            raise e
+        except Exception as exception:
+            raise exception
